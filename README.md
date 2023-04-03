@@ -1,5 +1,16 @@
 # file-store-client
-file store client
-``` sh
 
+Make config file
+``` sh
+   fsc create
+```
+
+push file
+```sh 
+   fsc push -d [directory] file
+```
+
+help
+```sh 
+   fsc --help
 ```
