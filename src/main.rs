@@ -31,10 +31,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let opt = Opt::parse();
 
-    if let Opt::Create=opt{
-        let config= include_str!("../config.toml");
-        std::fs::write("./config",config)?;
-        return Ok(())
+    if let Opt::Create = opt {
+        let config = include_str!("../config.toml");
+        std::fs::write("./config", config)?;
+        return Ok(());
     }
 
     let config = load_config().await?;
@@ -132,11 +132,8 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    match opt {
-        Opt::Push { dir, file } => {
-            push(client, dir, file).await?;
-        },
-        _=>{}
+    if let Opt::Push { dir, file } = opt {
+        push(client, dir, file).await?;
     }
     Ok(())
 }
@@ -161,7 +158,7 @@ async fn push(client: NetxClientArcDef, dir: Option<PathBuf>, file: PathBuf) -> 
 
     let mut file = tokio::fs::File::open(file).await?;
     let size = file.metadata().await?.file_size();
-    let start_hash =Instant::now();
+    let start_hash = Instant::now();
     let hash = {
         let mut sha = blake3::Hasher::new();
         let mut data = vec![0; 1024 * 1024];
@@ -174,7 +171,7 @@ async fn push(client: NetxClientArcDef, dir: Option<PathBuf>, file: PathBuf) -> 
         }
         hex::encode(sha.finalize().as_bytes())
     };
-    log::debug!("hash computer time:{}",start_hash.elapsed().as_secs_f64());
+    log::debug!("hash computer time:{}", start_hash.elapsed().as_secs_f64());
     log::debug!(
         "start push file name:{} size:{}B hash:{}",
         push_file_name,

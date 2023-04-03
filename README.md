@@ -2,7 +2,7 @@
 
 Make config file
 ``` sh
-   fsc create
+fsc create
 ```
 
 ```toml
@@ -32,10 +32,10 @@ key = "./tls/client-key.pem"
 
 push file
 ```sh 
-   fsc push -d [directory] file
+fsc push -d [directory] file
 ```
 
 help
 ```sh 
-   fsc --help
+fsc --help
 ```

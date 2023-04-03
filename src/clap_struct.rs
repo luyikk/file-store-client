@@ -13,5 +13,5 @@ pub enum Opt {
         file: PathBuf,
     },
     /// create config
-    Create
+    Create,
 }
