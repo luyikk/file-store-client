@@ -11,7 +11,6 @@ use netxclient::prelude::*;
 use rustls_pemfile::{certs, rsa_private_keys};
 use std::fmt::Write;
 use std::io::{BufReader, SeekFrom};
-use std::os::windows::prelude::MetadataExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -157,7 +156,7 @@ async fn push(client: NetxClientArcDef, dir: Option<PathBuf>, file: PathBuf) -> 
     };
 
     let mut file = tokio::fs::File::open(file).await?;
-    let size = file.metadata().await?.file_size();
+    let size = file.metadata().await?.len();
     let start_hash = Instant::now();
     let hash = {
         let mut sha = blake3::Hasher::new();
