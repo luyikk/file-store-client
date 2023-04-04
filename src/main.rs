@@ -197,7 +197,7 @@ async fn push(
         .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
         .progress_chars("#>-"));
 
-    let mut buff = vec![0; 4096];
+    let mut buff = vec![0; 256 * 1024];
     while let Ok(len) = file.read(&mut buff).await {
         if len > 0 {
             if !r#async {
@@ -212,9 +212,11 @@ async fn push(
         }
     }
 
+    pb.set_position(size);
+
     if r#async {
-        log::info!("wait 5 secs finish");
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        log::info!("wait 1 secs finish");
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
     server.push_finish(key).await?;
