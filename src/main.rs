@@ -13,7 +13,7 @@ use std::fmt::Write;
 use std::io::{BufReader, SeekFrom};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_rustls::rustls::{Certificate, ClientConfig, PrivateKey, RootCertStore, ServerName};
 
@@ -131,15 +131,20 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    if let Opt::Push { dir, file } = opt {
-        push(client, dir, file).await?;
+    if let Opt::Push { dir, file, r#async } = opt {
+        push(client, dir, file, r#async).await?;
     }
     Ok(())
 }
 
 /// push file to server
 #[inline]
-async fn push(client: NetxClientArcDef, dir: Option<PathBuf>, file: PathBuf) -> anyhow::Result<()> {
+async fn push(
+    client: NetxClientArcDef,
+    dir: Option<PathBuf>,
+    file: PathBuf,
+    r#async: bool,
+) -> anyhow::Result<()> {
     ensure!(file.exists(), "not found file:{}", file.to_string_lossy());
     let file_name = file
         .file_name()
@@ -149,7 +154,7 @@ async fn push(client: NetxClientArcDef, dir: Option<PathBuf>, file: PathBuf) -> 
     let push_file_name = {
         if let Some(mut dir) = dir {
             dir.push(&*file_name);
-            dir.to_string_lossy().to_string()
+            dir.to_string_lossy().replace('\\', "/").to_string()
         } else {
             file_name.to_string()
         }
@@ -195,12 +200,21 @@ async fn push(client: NetxClientArcDef, dir: Option<PathBuf>, file: PathBuf) -> 
     let mut buff = vec![0; 4096];
     while let Ok(len) = file.read(&mut buff).await {
         if len > 0 {
-            server.write_offset(key, position, &buff[..len]).await;
+            if !r#async {
+                server.write(key, &buff[..len]).await?;
+            } else {
+                server.write_offset(key, position, &buff[..len]).await;
+            }
             position += len as u64;
             pb.set_position(position.min(size));
         } else {
             break;
         }
+    }
+
+    if r#async {
+        log::info!("wait 5 secs finish");
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 
     server.push_finish(key).await?;

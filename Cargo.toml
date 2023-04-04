@@ -1,6 +1,6 @@
 [package]
 name = "fsc"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["luyi <luyikk@126.com>"]
 license = "MIT/Apache-2.0"
@@ -15,7 +15,7 @@ tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
-netxclient = { version = "1.8",features=["use_rustls"] }
+netxclient = { version = "1.8",features=["use_rustls","dserde"] }
 tokio-rustls="0.23"
 rustls-pemfile="1"
 async-trait = "0.1"
