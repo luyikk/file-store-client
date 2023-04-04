@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+#### Features
+* optimize sync write speed
+* fix tls write error
+* add block options
+
 ## 0.1.2
 #### Features
 * optimize sync write speed

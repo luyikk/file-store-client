@@ -131,8 +131,14 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    if let Opt::Push { dir, file, r#async } = opt {
-        push(client, dir, file, r#async).await?;
+    if let Opt::Push {
+        dir,
+        file,
+        r#async,
+        block,
+    } = opt
+    {
+        push(client, dir, file, r#async, block).await?;
     }
     Ok(())
 }
@@ -144,6 +150,7 @@ async fn push(
     dir: Option<PathBuf>,
     file: PathBuf,
     r#async: bool,
+    block: usize,
 ) -> anyhow::Result<()> {
     ensure!(file.exists(), "not found file:{}", file.to_string_lossy());
     let file_name = file
@@ -197,7 +204,7 @@ async fn push(
         .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
         .progress_chars("#>-"));
 
-    let mut buff = vec![0; 256 * 1024];
+    let mut buff = vec![0; block];
     while let Ok(len) = file.read(&mut buff).await {
         if len > 0 {
             if !r#async {
@@ -212,7 +219,7 @@ async fn push(
         }
     }
 
-    pb.set_position(size);
+    pb.finish_with_message("downloaded");
 
     if r#async {
         log::info!("wait 1 secs finish");
