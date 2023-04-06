@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+#### Features
+* update rustls and netx
+
 ## 0.1.3
 #### Features
 * optimize sync write speed
