@@ -17,6 +17,9 @@ pub enum Opt {
         /// local file
         #[arg(value_parser)]
         file: PathBuf,
+        /// if service exists file, over write file
+        #[arg(long, short, value_parser, default_value = "false")]
+        overwrite: bool,
     },
     /// create config
     Create,

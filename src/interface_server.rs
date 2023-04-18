@@ -11,11 +11,17 @@ pub trait IFileStoreService {
     ///
     /// size: file size u64
     ///
-    /// sha256: file sha256
+    /// hash: file BLAKE3
     ///
     /// return: file write key
     #[tag(1001)]
-    async fn push(&self, filename: &str, size: u64, sha1: String) -> anyhow::Result<u64>;
+    async fn push(
+        &self,
+        filename: &str,
+        size: u64,
+        hash: String,
+        overwrite: bool,
+    ) -> anyhow::Result<u64>;
     /// write data to file
     /// key: file push key
     /// data: file data

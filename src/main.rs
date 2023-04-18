@@ -136,9 +136,10 @@ async fn main() -> anyhow::Result<()> {
         file,
         r#async,
         block,
+        overwrite,
     } = opt
     {
-        push(client, dir, file, r#async, block).await?;
+        push(client, dir, file, r#async, block, overwrite).await?;
     }
     Ok(())
 }
@@ -151,6 +152,7 @@ async fn push(
     file: PathBuf,
     r#async: bool,
     block: usize,
+    overwrite: bool,
 ) -> anyhow::Result<()> {
     ensure!(file.exists(), "not found file:{}", file.to_string_lossy());
     let file_name = file
@@ -193,7 +195,7 @@ async fn push(
 
     let server = impl_struct!(client=>IFileStoreService);
 
-    let key = server.push(&push_file_name, size, hash).await?;
+    let key = server.push(&push_file_name, size, hash, overwrite).await?;
 
     log::debug!("start write file:{push_file_name} key:{key}");
 
