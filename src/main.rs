@@ -237,8 +237,9 @@ async fn push(
     pb.finish_with_message("downloaded");
 
     if r#async {
-        log::info!("wait 1 secs finish");
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        while !server.check_finish(key).await? {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 
     server.push_finish(key).await?;
@@ -370,7 +371,9 @@ async fn push_image(
 
             progress.finish();
             if r#async {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                while !server.check_finish(key).await? {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
             }
             server.push_finish(key).await?;
             Ok(())
