@@ -383,7 +383,7 @@ async fn push_image(
         let file_pb = multi_progress.add(ProgressBar::new(files.len() as u64));
         file_pb.set_style(
             ProgressStyle::with_template(
-                "[{elapsed_precise}] {bar:50.cyan/blue} {pos:>7}/{len:7} {msg}",
+                "[{elapsed_precise}] {bar:20.cyan/blue} {pos:>7}/{len:7} {msg}",
             )
             .unwrap()
             .progress_chars("##-"),
