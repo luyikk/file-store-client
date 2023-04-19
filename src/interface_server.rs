@@ -36,4 +36,11 @@ pub trait IFileStoreService {
     /// finish write
     #[tag(1004)]
     async fn push_finish(&self, key: u64) -> anyhow::Result<()>;
+    /// lock the filenames can be push
+    #[tag(1005)]
+    async fn lock(
+        &self,
+        filenames:  &[String],
+        overwrite: bool,
+    ) ->  anyhow::Result<(bool, String)>;
 }

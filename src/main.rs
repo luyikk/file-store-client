@@ -4,20 +4,20 @@ mod interface_server;
 
 use anyhow::{ensure, Context};
 use clap::Parser;
-use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 use log::LevelFilter;
 use netxclient::client::NetxClientArcDef;
 use netxclient::prelude::*;
 use rustls_pemfile::{certs, rsa_private_keys};
 use std::fmt::Write;
 use std::io::{BufReader, SeekFrom};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_rustls::rustls::{Certificate, ClientConfig, PrivateKey, RootCertStore, ServerName};
 
-use crate::clap_struct::Opt;
+use crate::clap_struct::{ImageArgs, ImageCommands, Opt};
 use crate::config::{get_current_exec_path, load_config};
 use crate::interface_server::*;
 
@@ -131,16 +131,31 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    if let Opt::Push {
-        dir,
-        file,
-        r#async,
-        block,
-        overwrite,
-    } = opt
-    {
-        push(client, dir, file, r#async, block, overwrite).await?;
+    match opt {
+        Opt::Push {
+            dir,
+            file,
+            r#async,
+            block,
+            overwrite,
+        } => {
+            push(client, dir, file, r#async, block, overwrite).await?;
+        }
+        Opt::Image(ImageArgs {
+            command:
+                ImageCommands::Push {
+                    dir,
+                    path,
+                    r#async,
+                    block,
+                    overwrite,
+                },
+        }) => {
+            push_image(client, dir, path, r#async, block, overwrite).await?;
+        }
+        _ => {}
     }
+
     Ok(())
 }
 
@@ -154,6 +169,7 @@ async fn push(
     block: usize,
     overwrite: bool,
 ) -> anyhow::Result<()> {
+    ensure!(file.is_file(), "path:{} not file", file.display());
     ensure!(file.exists(), "not found file:{}", file.to_string_lossy());
     let file_name = file
         .file_name()
@@ -184,8 +200,8 @@ async fn push(
         }
         hex::encode(sha.finalize().as_bytes())
     };
-    log::debug!("hash computer time:{}", start_hash.elapsed().as_secs_f64());
-    log::debug!(
+    log::trace!("hash computer time:{}", start_hash.elapsed().as_secs_f64());
+    log::trace!(
         "start push file name:{} size:{}B hash:{}",
         push_file_name,
         size,
@@ -194,11 +210,8 @@ async fn push(
     file.seek(SeekFrom::Start(0)).await?;
 
     let server = impl_struct!(client=>IFileStoreService);
-
     let key = server.push(&push_file_name, size, hash, overwrite).await?;
-
     log::debug!("start write file:{push_file_name} key:{key}");
-
     let mut position = 0;
     let pb = ProgressBar::new(size);
     pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
@@ -229,5 +242,174 @@ async fn push(
     }
 
     server.push_finish(key).await?;
+    Ok(())
+}
+
+/// push image path
+#[inline]
+async fn push_image(
+    client: NetxClientArcDef,
+    dir: Option<PathBuf>,
+    path: PathBuf,
+    r#async: bool,
+    block: usize,
+    overwrite: bool,
+) -> anyhow::Result<()> {
+    ensure!(path.is_dir(), "path:{} not dir", path.display());
+    ensure!(path.exists(), "not found path:{}", path.display());
+
+    #[inline]
+    fn visit_dirs(dir: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+        if dir.is_dir() {
+            for entry in std::fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_dirs(&path, files)?;
+                } else {
+                    files.push(entry.path());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let mut files = vec![];
+    visit_dirs(&path, &mut files)?;
+
+    ensure!(
+        !files.is_empty(),
+        "path:{} is empty directory",
+        path.display()
+    );
+
+    let relative_files = files
+        .iter()
+        .map(|file| {
+            let parent = if let Some(base) = path.parent() {
+                file.strip_prefix(base).unwrap().parent().unwrap()
+            } else {
+                file.parent().unwrap()
+            };
+
+            if let Some(ref dir) = dir {
+                PathBuf::from(dir.join(parent).to_string_lossy().replace('\\', "/"))
+            } else {
+                PathBuf::from(parent.to_string_lossy().replace('\\', "/"))
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let check_files = relative_files
+        .iter()
+        .zip(files.iter())
+        .map(|(base, file)| {
+            base.join(file.file_name().unwrap())
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect::<Vec<_>>();
+
+    let server = impl_struct!(client=>IFileStoreService);
+
+    log::debug!("start check path:{}", path.display());
+    let (success, msg) = server.lock(&check_files, overwrite).await?;
+
+    if success {
+        /// push file
+        #[inline]
+        async fn push_file(
+            client: NetxClientArcDef,
+            progress: &ProgressBar,
+            push_file_name: String,
+            file: PathBuf,
+            r#async: bool,
+            block: usize,
+            overwrite: bool,
+        ) -> anyhow::Result<()> {
+            ensure!(file.is_file(), "path:{} not file", file.display());
+            ensure!(file.exists(), "not found file:{}", file.to_string_lossy());
+            let mut file = tokio::fs::File::open(file).await?;
+            let size = file.metadata().await?.len();
+            let hash = {
+                let mut sha = blake3::Hasher::new();
+                let mut data = vec![0; 1024 * 1024];
+                while let Ok(len) = file.read(&mut data).await {
+                    if len > 0 {
+                        sha.update(&data[..len]);
+                    } else {
+                        break;
+                    }
+                }
+                hex::encode(sha.finalize().as_bytes())
+            };
+
+            file.seek(SeekFrom::Start(0)).await?;
+
+            let server = impl_struct!(client=>IFileStoreService);
+            let key = server.push(&push_file_name, size, hash, overwrite).await?;
+
+            let mut position = 0;
+            progress.set_length(size);
+            progress.reset();
+
+            let mut buff = vec![0; block];
+            while let Ok(len) = file.read(&mut buff).await {
+                if len > 0 {
+                    if !r#async {
+                        server.write(key, &buff[..len]).await?;
+                    } else {
+                        server.write_offset(key, position, &buff[..len]).await;
+                    }
+                    position += len as u64;
+                    progress.set_position(position.min(size));
+                } else {
+                    break;
+                }
+            }
+
+            progress.finish();
+            if r#async {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            server.push_finish(key).await?;
+            Ok(())
+        }
+
+        let multi_progress = MultiProgress::new();
+        let file_pb = multi_progress.add(ProgressBar::new(files.len() as u64));
+        file_pb.set_style(
+            ProgressStyle::with_template(
+                "[{elapsed_precise}] {bar:50.cyan/blue} {pos:>7}/{len:7} {msg}",
+            )
+            .unwrap()
+            .progress_chars("##-"),
+        );
+
+        let write_pb = multi_progress.add(ProgressBar::new(0));
+        write_pb.set_style(ProgressStyle::with_template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+            .unwrap()
+            .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
+            .progress_chars("#>-"));
+
+        for (file, push_file_name) in files.into_iter().zip(check_files.into_iter()) {
+            file_pb.set_message(format!("start push file:{}", push_file_name));
+            push_file(
+                client.clone(),
+                &write_pb,
+                push_file_name,
+                file,
+                r#async,
+                block,
+                overwrite,
+            )
+            .await?;
+            file_pb.inc(1);
+        }
+        file_pb.finish_with_message("image push finish");
+    } else {
+        log::error!("check path:{} error:{}", path.display(), msg);
+    }
+
     Ok(())
 }
