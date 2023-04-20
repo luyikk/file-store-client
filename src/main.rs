@@ -237,8 +237,10 @@ async fn push(
     pb.finish_with_message("downloaded");
 
     if r#async {
-        while !server.check_finish(key).await? {
+        let mut retry_count = 0;
+        while !server.check_finish(key).await? && retry_count < 20 {
             tokio::time::sleep(Duration::from_millis(10)).await;
+            retry_count += 1;
         }
     }
 
@@ -371,8 +373,10 @@ async fn push_image(
 
             progress.finish();
             if r#async {
-                while !server.check_finish(key).await? {
+                let mut retry_count = 0;
+                while !server.check_finish(key).await? && retry_count < 20 {
                     tokio::time::sleep(Duration::from_millis(10)).await;
+                    retry_count += 1;
                 }
             }
             server.push_finish(key).await?;
@@ -383,7 +387,7 @@ async fn push_image(
         let file_pb = multi_progress.add(ProgressBar::new(files.len() as u64));
         file_pb.set_style(
             ProgressStyle::with_template(
-                "[{elapsed_precise}] {bar:20.cyan/blue} {pos:>7}/{len:7} {msg}",
+                "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
             )
             .unwrap()
             .progress_chars("##-"),
