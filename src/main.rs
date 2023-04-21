@@ -3,6 +3,7 @@ mod config;
 mod interface_server;
 
 use anyhow::{ensure, Context};
+use chrono::{DateTime, Local};
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 use log::LevelFilter;
@@ -24,7 +25,7 @@ use crate::interface_server::*;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::builder()
-        .filter_level(LevelFilter::Trace)
+        .filter_level(LevelFilter::Info)
         .filter_module("rustls", LevelFilter::Debug)
         .filter_module("mio", LevelFilter::Debug)
         .init();
@@ -152,6 +153,9 @@ async fn main() -> anyhow::Result<()> {
                 },
         }) => {
             push_image(client, dir, path, r#async, block, overwrite).await?;
+        }
+        Opt::ShowDir { dir } => {
+            show_dir(client, dir).await?;
         }
         _ => {}
     }
@@ -416,6 +420,37 @@ async fn push_image(
         file_pb.finish_with_message("image push finish");
     } else {
         log::error!("check path:{} error:{}", path.display(), msg);
+    }
+
+    Ok(())
+}
+
+/// push image path
+#[inline]
+async fn show_dir(client: NetxClientArcDef, dir: PathBuf) -> anyhow::Result<()> {
+    use console::style;
+    use file_size::fit_4;
+    let server = impl_struct!(client=>IFileStoreService);
+    let mut files = server.show_directory_contents(dir).await?;
+    files.sort_by(|a, b| b.file_type.cmp(&a.file_type));
+    for entry in files {
+        if entry.file_type == 1 {
+            let datetime = DateTime::<Local>::from(entry.create_time);
+            println!(
+                "{:10}         {}      {}/",
+                style(fit_4(0)).yellow().bold(),
+                style(datetime.format("%d/%m/%Y %T")).green().bold(),
+                style(entry.name).blue().bold()
+            );
+        } else {
+            let datetime = DateTime::<Local>::from(entry.create_time);
+            println!(
+                "{:10}         {}      {}",
+                style(fit_4(entry.size)).yellow().bold(),
+                style(datetime.format("%d/%m/%Y %T")).green().bold(),
+                style(entry.name).cyan().bold()
+            );
+        }
     }
 
     Ok(())

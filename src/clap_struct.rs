@@ -25,6 +25,12 @@ pub enum Opt {
     },
     /// image path
     Image(ImageArgs),
+    /// show directory contents
+    #[command(name = "show")]
+    ShowDir {
+        #[arg(value_parser)]
+        dir: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]

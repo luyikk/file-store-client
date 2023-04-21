@@ -1,4 +1,16 @@
 use netxclient::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::time::SystemTime;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Entry {
+    /// 0=file 1=directory
+    pub file_type: u8,
+    pub name: String,
+    pub size: u64,
+    pub create_time: SystemTime,
+}
 
 /// service interface
 #[build]
@@ -42,4 +54,7 @@ pub trait IFileStoreService {
     /// check ready
     #[tag(1006)]
     async fn check_finish(&self, key: u64) -> anyhow::Result<bool>;
+    /// show directory contents
+    #[tag(1007)]
+    async fn show_directory_contents(&self, path: PathBuf) -> anyhow::Result<Vec<Entry>>;
 }
