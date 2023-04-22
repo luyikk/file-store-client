@@ -14,10 +14,10 @@ pub enum Opt {
         #[arg(value_parser)]
         file: PathBuf,
         /// async write
-        #[arg(long, value_parser, default_value = "false")]
+        #[arg(long, short, value_parser, default_value = "false")]
         r#async: bool,
-        /// transfer block size default 65536
-        #[arg(long, short, value_parser, default_value = "65536")]
+        /// transfer block size default 131072
+        #[arg(long, short, value_parser, default_value = "131072")]
         block: usize,
         /// if service exists file, over write file
         #[arg(long, short, value_parser, default_value = "false")]
@@ -28,8 +28,15 @@ pub enum Opt {
     /// show directory contents
     #[command(name = "show")]
     ShowDir {
+        /// directory path
         #[arg(value_parser)]
         dir: PathBuf,
+    },
+    /// show file info
+    Info {
+        /// file path
+        #[arg(value_parser)]
+        file: PathBuf,
     },
 }
 
@@ -51,10 +58,10 @@ pub enum ImageCommands {
         #[arg(value_parser)]
         path: PathBuf,
         /// async write
-        #[arg(long, value_parser, default_value = "false")]
+        #[arg(long, short, value_parser, default_value = "false")]
         r#async: bool,
-        /// transfer block size default 65536
-        #[arg(long, short, value_parser, default_value = "65536")]
+        /// transfer block size default 131072
+        #[arg(long, short, value_parser, default_value = "131072")]
         block: usize,
         /// if service exists file, over write file
         #[arg(long, short, value_parser, default_value = "false")]

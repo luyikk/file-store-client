@@ -12,6 +12,15 @@ pub struct Entry {
     pub create_time: SystemTime,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FileInfo {
+    pub name: String,
+    pub size: u64,
+    pub create_time: SystemTime,
+    pub b3: Option<String>,
+    pub sha256: Option<String>,
+}
+
 /// service interface
 #[build]
 pub trait IFileStoreService {
@@ -57,4 +66,12 @@ pub trait IFileStoreService {
     /// show directory contents
     #[tag(1007)]
     async fn show_directory_contents(&self, path: PathBuf) -> anyhow::Result<Vec<Entry>>;
+    /// get file info
+    #[tag(1008)]
+    async fn get_file_info(
+        &self,
+        path: PathBuf,
+        blake3: bool,
+        sha256: bool,
+    ) -> anyhow::Result<FileInfo>;
 }

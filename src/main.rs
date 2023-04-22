@@ -157,6 +157,9 @@ async fn main() -> anyhow::Result<()> {
         Opt::ShowDir { dir } => {
             show_dir(client, dir).await?;
         }
+        Opt::Info { file } => {
+            show_file_info(client, file).await?;
+        }
         _ => {}
     }
 
@@ -425,11 +428,11 @@ async fn push_image(
     Ok(())
 }
 
-/// push image path
+/// show directory contexts
 #[inline]
 async fn show_dir(client: NetxClientArcDef, dir: PathBuf) -> anyhow::Result<()> {
     use console::style;
-    use file_size::fit_4;
+    use humansize::{format_size, WINDOWS};
     let server = impl_struct!(client=>IFileStoreService);
     let mut files = server.show_directory_contents(dir).await?;
     files.sort_by(|a, b| b.file_type.cmp(&a.file_type));
@@ -438,7 +441,7 @@ async fn show_dir(client: NetxClientArcDef, dir: PathBuf) -> anyhow::Result<()> 
             let datetime = DateTime::<Local>::from(entry.create_time);
             println!(
                 "{:10}         {}      {}/",
-                style(fit_4(0)).yellow().bold(),
+                style(format_size(0u32, WINDOWS)).yellow().bold(),
                 style(datetime.format("%d/%m/%Y %T")).green().bold(),
                 style(entry.name).blue().bold()
             );
@@ -446,12 +449,33 @@ async fn show_dir(client: NetxClientArcDef, dir: PathBuf) -> anyhow::Result<()> 
             let datetime = DateTime::<Local>::from(entry.create_time);
             println!(
                 "{:10}         {}      {}",
-                style(fit_4(entry.size)).yellow().bold(),
+                style(format_size(entry.size, WINDOWS)).yellow().bold(),
                 style(datetime.format("%d/%m/%Y %T")).green().bold(),
                 style(entry.name).cyan().bold()
             );
         }
     }
 
+    Ok(())
+}
+
+/// show file info
+#[inline]
+async fn show_file_info(client: NetxClientArcDef, file: PathBuf) -> anyhow::Result<()> {
+    use console::style;
+    use humansize::{format_size, WINDOWS};
+    let server = impl_struct!(client=>IFileStoreService);
+    let info = server.get_file_info(file, true, true).await?;
+    println!(
+        "file name: {}\nsize: {} Byte ({})\nblake3: {}\nsha256: {}\ncreate time: {}",
+        style(info.name).cyan().bold(),
+        style(info.size).yellow().bold(),
+        style(format_size(info.size, WINDOWS)).yellow(),
+        style(info.b3.unwrap()).blue().bold(),
+        style(info.sha256.unwrap()).red().bold(),
+        style(DateTime::<Local>::from(info.create_time).format("%d/%m/%Y %T"))
+            .green()
+            .bold()
+    );
     Ok(())
 }
