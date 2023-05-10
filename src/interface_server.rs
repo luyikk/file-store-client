@@ -1,5 +1,6 @@
 use netxclient::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -19,6 +20,7 @@ pub struct FileInfo {
     pub create_time: SystemTime,
     pub b3: Option<String>,
     pub sha256: Option<String>,
+    pub can_modify: bool,
 }
 
 /// service interface
@@ -70,8 +72,19 @@ pub trait IFileStoreService {
     #[tag(1008)]
     async fn get_file_info(
         &self,
-        path: PathBuf,
+        path: &Path,
         blake3: bool,
         sha256: bool,
     ) -> anyhow::Result<FileInfo>;
+
+    /// create pull file
+    /// return pull file key
+    #[tag(1009)]
+    async fn create_pull(&self, file: &Path) -> anyhow::Result<u64>;
+    /// read data
+    #[tag(1010)]
+    async fn read(&self, key: u64, offset: u64, block: usize) -> anyhow::Result<Vec<u8>>;
+    /// finish write key
+    #[tag(1012)]
+    async fn finish_read_key(&self, key: u64);
 }

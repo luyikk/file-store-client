@@ -23,18 +23,33 @@ pub enum Opt {
         #[arg(long, short, value_parser, default_value = "false")]
         overwrite: bool,
     },
+    /// pull file
+    Pull {
+        /// remote file path
+        #[arg(value_parser)]
+        file: PathBuf,
+        /// save file path
+        #[arg(long, short, value_parser)]
+        save: Option<PathBuf>,
+        /// transfer block size default 131072
+        #[arg(long, short, value_parser, default_value = "131072")]
+        block: usize,
+        /// if exists file, over write file
+        #[arg(long, short, value_parser, default_value = "false")]
+        overwrite: bool,
+    },
     /// image path
     Image(ImageArgs),
-    /// show directory contents
+    /// show remote directory contents
     #[command(name = "show")]
     ShowDir {
-        /// directory path
+        /// remote directory path
         #[arg(value_parser)]
         dir: PathBuf,
     },
-    /// show file info
+    /// show remote file info
     Info {
-        /// file path
+        /// remote file path
         #[arg(value_parser)]
         file: PathBuf,
     },

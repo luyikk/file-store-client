@@ -2,7 +2,7 @@ mod clap_struct;
 mod config;
 mod interface_server;
 
-use anyhow::{ensure, Context};
+use anyhow::{bail, ensure, Context};
 use chrono::{DateTime, Local};
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
@@ -15,7 +15,7 @@ use std::io::{BufReader, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_rustls::rustls::{Certificate, ClientConfig, PrivateKey, RootCertStore, ServerName};
 
 use crate::clap_struct::{ImageArgs, ImageCommands, Opt};
@@ -142,6 +142,14 @@ async fn main() -> anyhow::Result<()> {
         } => {
             push(client, dir, file, r#async, block, overwrite).await?;
         }
+        Opt::Pull {
+            file,
+            save,
+            block,
+            overwrite,
+        } => {
+            pull_file(&client, file, save, block, overwrite).await?;
+        }
         Opt::Image(ImageArgs {
             command:
                 ImageCommands::Push {
@@ -241,7 +249,7 @@ async fn push(
         }
     }
 
-    pb.finish_with_message("downloaded");
+    pb.finish_with_message("upload success");
 
     if r#async {
         let mut retry_count = 0;
@@ -465,17 +473,118 @@ async fn show_file_info(client: NetxClientArcDef, file: PathBuf) -> anyhow::Resu
     use console::style;
     use humansize::{format_size, WINDOWS};
     let server = impl_struct!(client=>IFileStoreService);
-    let info = server.get_file_info(file, true, true).await?;
+    let info = server.get_file_info(&file, true, true).await?;
     println!(
-        "file name: {}\nsize: {} Byte ({})\nblake3: {}\nsha256: {}\ncreate time: {}",
+        "file name: {}\nsize: {} Byte ({})\nblake3: {}\nsha256: {}\ncreate time: {}\ncan modify: {}",
         style(info.name).cyan().bold(),
         style(info.size).yellow().bold(),
         style(format_size(info.size, WINDOWS)).yellow(),
-        style(info.b3.unwrap()).blue().bold(),
-        style(info.sha256.unwrap()).red().bold(),
+        style(info.b3.as_ref().map_or("none",|x|x.as_str())).blue().bold(),
+        style(info.sha256.as_ref().map_or("none",|x|x.as_str())).red().bold(),
         style(DateTime::<Local>::from(info.create_time).format("%d/%m/%Y %T"))
             .green()
+            .bold(),
+        style(info.can_modify)
+            .white()
             .bold()
     );
+    Ok(())
+}
+
+/// pull file
+#[inline]
+async fn pull_file(
+    client: &NetxClientArcDef,
+    file: PathBuf,
+    save: Option<PathBuf>,
+    block: usize,
+    overwrite: bool,
+) -> anyhow::Result<()> {
+    let server = impl_struct!(client=>IFileStoreService);
+    let info = server.get_file_info(&file, true, false).await?;
+    ensure!(
+        info.b3.is_some(),
+        "currently unable to pull file:{}",
+        file.display()
+    );
+
+    let save_path = {
+        if let Some(save) = save {
+            if save.is_dir() {
+                save.join(&info.name)
+            } else {
+                save
+            }
+        } else {
+            PathBuf::from(&info.name)
+        }
+    };
+
+    if save_path.exists() {
+        if !overwrite {
+            bail!("file:{} already exists", save_path.display())
+        } else {
+            std::fs::remove_file(&save_path)?;
+        }
+    }
+
+    log::info!("start pull file:{}", save_path.display());
+    let key = server.create_pull(&file).await?;
+    let mut fd = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(&save_path)
+        .await?;
+
+    let size = info.size;
+    let pb = ProgressBar::new(size);
+    pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+        .unwrap()
+        .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
+        .progress_chars("#>-"));
+
+    let mut offset = 0;
+    while let Ok(data) = server.read(key, offset, block).await {
+        if !data.is_empty() {
+            offset += data.len() as u64;
+            fd.write_all(&data).await?;
+            pb.set_position(offset.min(size));
+        } else {
+            break;
+        }
+    }
+    fd.flush().await?;
+    pb.finish_with_message("downloaded success");
+    drop(fd);
+    server.finish_read_key(key).await;
+
+    let b3 = {
+        let mut sha = blake3::Hasher::new();
+        let mut data = vec![0; 512 * 1024];
+        let mut file = tokio::fs::OpenOptions::new()
+            .read(true)
+            .open(&save_path)
+            .await?;
+        while let Ok(len) = file.read(&mut data).await {
+            if len > 0 {
+                sha.update(&data[..len]);
+            } else {
+                break;
+            }
+        }
+        hex::encode(sha.finalize().as_bytes())
+    };
+
+    if &b3 != info.b3.as_ref().unwrap() {
+        std::fs::remove_file(save_path)?;
+        bail!(
+            "file read hash error remote b3:{} local b3:{}",
+            info.b3.unwrap(),
+            b3
+        );
+    } else {
+        log::info!("pull file:{} success", save_path.display());
+    }
+
     Ok(())
 }
