@@ -1,7 +1,6 @@
 # file store client
 
-
-### Service address:[file store service](https://github.com/luyikk/file-store-server)
+### [Click to [File Store Server]](https://github.com/luyikk/file-store-server)
 
 Make config file
 ``` sh
