@@ -23,7 +23,7 @@ request_out_time_ms=15000
 [tls]
 # ca file path (optional)
 # if not provided, the server’s certificate will not be verified.
-ca = "./tls/ca.crt"
+# ca = "./tls/ca.crt"
 
 # cert file path
 cert = "./tls/client-crt.pem"
