@@ -30,12 +30,71 @@ cert = "./tls/client-crt.pem"
 key = "./tls/client-key.pem"
 ```
 
-push file
-```sh 
-fsc push -d [directory] file
+help
+```shell 
+Usage: fsc <COMMAND>
+
+Commands:
+  create  create config
+  push    push file
+  pull    pull file
+  image   image path
+  show    show remote directory contents
+  info    show remote file info
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
 ```
 
-help
-```sh 
-fsc --help
+push
+```shell
+Usage: fsc push [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  local file
+
+Options:
+  -d, --dir <DIR>      save dir
+  -a, --async          async write
+  -b, --block <BLOCK>  transfer block size default 131072 [default: 131072]
+  -o, --overwrite      if service exists file, over write file
+  -h, --help           Print help
+```
+
+fsc image push
+```shell
+Usage: fsc image push [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>  local path
+
+Options:
+  -d, --dir <DIR>      save dir
+  -a, --async          async write
+  -b, --block <BLOCK>  transfer block size default 131072 [default: 131072]
+  -o, --overwrite      if service exists file, over write file
+  -h, --help           Print help
+```
+
+fsc pull
+```shell
+Usage: fsc pull [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  remote file path
+
+Options:
+  -s, --save <SAVE>    save file path
+  -b, --block <BLOCK>  transfer block size default 131072 [default: 131072]
+  -o, --overwrite      if exists file, over write file
+  -h, --help           Print help
+```
+
+example
+```shell
+fsc push ./file
+fsc image push ./dirctory
+fsc pull ./file
+fsc pull ./file -s ./save_file
 ```
