@@ -25,7 +25,7 @@ use crate::config::{get_current_exec_path, load_config};
 use crate::controller::{ClientController, FileWriteService, IFileWS, WriteHandle};
 use crate::interface_server::*;
 
-#[tokio::main]
+#[tokio::main(worker_threads = 2)]
 async fn main() -> anyhow::Result<()> {
     env_logger::builder()
         .filter_level(LevelFilter::Trace)
