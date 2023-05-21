@@ -31,6 +31,9 @@ pub enum Opt {
         /// save file path
         #[arg(long, short, value_parser)]
         save: Option<PathBuf>,
+        /// async write
+        #[arg(long, short, value_parser, default_value = "false")]
+        r#async: bool,
         /// transfer block size default 131072
         #[arg(long, short, value_parser, default_value = "131072")]
         block: usize,

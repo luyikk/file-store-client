@@ -1,5 +1,6 @@
 mod clap_struct;
 mod config;
+mod controller;
 mod interface_server;
 
 use anyhow::{bail, ensure, Context};
@@ -20,12 +21,13 @@ use tokio_rustls::rustls::{Certificate, ClientConfig, PrivateKey, RootCertStore,
 
 use crate::clap_struct::{ImageArgs, ImageCommands, Opt};
 use crate::config::{get_current_exec_path, load_config};
+use crate::controller::{ClientController, FileWriteService, IFileWS, WriteHandle};
 use crate::interface_server::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::builder()
-        .filter_level(LevelFilter::Info)
+        .filter_level(LevelFilter::Trace)
         .filter_module("rustls", LevelFilter::Debug)
         .filter_module("mio", LevelFilter::Debug)
         .init();
@@ -145,10 +147,11 @@ async fn main() -> anyhow::Result<()> {
         Opt::Pull {
             file,
             save,
+            r#async,
             block,
             overwrite,
         } => {
-            pull_file(&client, file, save, block, overwrite).await?;
+            pull_file(&client, file, save, r#async, block, overwrite).await?;
         }
         Opt::Image(ImageArgs {
             command:
@@ -491,12 +494,13 @@ async fn show_file_info(client: NetxClientArcDef, file: PathBuf) -> anyhow::Resu
     Ok(())
 }
 
-/// pull file
+/// sync pull file
 #[inline]
 async fn pull_file(
     client: &NetxClientArcDef,
     file: PathBuf,
     save: Option<PathBuf>,
+    r#async: bool,
     block: usize,
     overwrite: bool,
 ) -> anyhow::Result<()> {
@@ -530,6 +534,7 @@ async fn pull_file(
 
     log::info!("start pull file:{}", save_path.display());
     let key = server.create_pull(&file).await?;
+
     let mut fd = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -537,25 +542,48 @@ async fn pull_file(
         .await?;
 
     let size = info.size;
+    log::debug!("file size:{}", size);
     let pb = ProgressBar::new(size);
     pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
         .unwrap()
         .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
         .progress_chars("#>-"));
 
-    let mut offset = 0;
-    while let Ok(data) = server.read(key, offset, block).await {
-        if !data.is_empty() {
-            offset += data.len() as u64;
-            fd.write_all(&data).await?;
+    if r#async {
+        let wfs = FileWriteService::new();
+        let controller = ClientController::new(wfs.clone());
+        client.init(controller).await?;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
+        wfs.create_wfs(key, WriteHandle::new(fd, tx)).await;
+
+        server.async_read(key, block).await;
+
+        let mut offset: u64 = 0;
+        while let Some(r_size) = rx.recv().await {
+            offset += r_size;
             pb.set_position(offset.min(size));
-        } else {
-            break;
+            if offset >= size {
+                break;
+            }
         }
+        wfs.close_wfs(key).await?;
+    } else {
+        let mut offset = 0;
+        while let Ok(data) = server.read(key, offset, block).await {
+            if !data.is_empty() {
+                offset += data.len() as u64;
+                fd.write_all(&data).await?;
+                pb.set_position(offset.min(size));
+            } else {
+                break;
+            }
+        }
+        fd.flush().await?;
+        drop(fd);
     }
-    fd.flush().await?;
+
     pb.finish_with_message("downloaded success");
-    drop(fd);
     server.finish_read_key(key).await;
 
     let b3 = {

@@ -84,6 +84,9 @@ pub trait IFileStoreService {
     /// read data
     #[tag(1010)]
     async fn read(&self, key: u64, offset: u64, block: usize) -> anyhow::Result<Vec<u8>>;
+    /// start async read
+    #[tag(1011)]
+    async fn async_read(&self, key: u64, block: usize);
     /// finish write key
     #[tag(1012)]
     async fn finish_read_key(&self, key: u64);

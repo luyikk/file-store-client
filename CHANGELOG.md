@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+#### Features
+* add async super speed pull
+
+```shell
+fsc pull -a file
+fsc pull --async file
+```
+
 ## 0.2.0
 #### Features
 * add pull command
