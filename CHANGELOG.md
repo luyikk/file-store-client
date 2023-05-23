@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+#### Features
+* fix pull error not stderr out
+
 ## 0.2.1
 #### Features
 * add async super speed pull
