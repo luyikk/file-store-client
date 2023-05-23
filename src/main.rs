@@ -488,11 +488,11 @@ async fn pull_file(
 ) -> anyhow::Result<()> {
     let server = impl_struct!(client=>IFileStoreService);
     let info = {
-        match server.get_file_info(&file, true, false).await{
-            Ok(info)=>info,
-            Err(err)=>{
-                log::error!("{}",err);
-                return Ok(())
+        match server.get_file_info(&file, true, false).await {
+            Ok(info) => info,
+            Err(err) => {
+                log::error!("{}", err);
+                return Ok(());
             }
         }
     };
