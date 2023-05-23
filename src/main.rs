@@ -487,7 +487,15 @@ async fn pull_file(
     overwrite: bool,
 ) -> anyhow::Result<()> {
     let server = impl_struct!(client=>IFileStoreService);
-    let info = server.get_file_info(&file, true, false).await?;
+    let info = {
+        match server.get_file_info(&file, true, false).await{
+            Ok(info)=>info,
+            Err(err)=>{
+                log::error!("{}",err);
+                return Ok(())
+            }
+        }
+    };
     ensure!(
         info.b3.is_some(),
         "currently unable to pull file:{}",
