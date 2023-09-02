@@ -16,8 +16,8 @@ pub enum Opt {
         /// async write
         #[arg(long, short, value_parser, default_value = "false")]
         r#async: bool,
-        /// transfer block size default 131072
-        #[arg(long, short, value_parser, default_value = "131072")]
+        /// transfer block size default 65536
+        #[arg(long, short, value_parser, default_value = "65536")]
         block: usize,
         /// if service exists file, over write file
         #[arg(long, short, value_parser, default_value = "false")]
@@ -34,8 +34,8 @@ pub enum Opt {
         /// async write
         #[arg(long, short, value_parser, default_value = "false")]
         r#async: bool,
-        /// transfer block size default 131072
-        #[arg(long, short, value_parser, default_value = "131072")]
+        /// transfer block size default 65536
+        #[arg(long, short, value_parser, default_value = "65536")]
         block: usize,
         /// if exists file, over write file
         #[arg(long, short, value_parser, default_value = "false")]
@@ -78,8 +78,8 @@ pub enum ImageCommands {
         /// async write
         #[arg(long, short, value_parser, default_value = "false")]
         r#async: bool,
-        /// transfer block size default 131072
-        #[arg(long, short, value_parser, default_value = "131072")]
+        /// transfer block size default 65536
+        #[arg(long, short, value_parser, default_value = "65536")]
         block: usize,
         /// if service exists file, over write file
         #[arg(long, short, value_parser, default_value = "false")]

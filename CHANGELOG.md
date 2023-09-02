@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+#### Features
+* change default block size 65536
+
 ## 0.2.2
 #### Features
 * fix pull error not stderr out
