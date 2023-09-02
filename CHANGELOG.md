@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.4
+#### Features
+* update rustls
+
+
 ## 0.2.3
 #### Features
 * change default block size 65536
