@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+#### Features
+update to netx 2
+
 ## 0.2.0
 #### Features
 * add pull command
