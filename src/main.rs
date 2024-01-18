@@ -104,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
                 let tls_config = ClientConfig::builder()
                     .with_safe_defaults()
                     .with_root_certificates(server_auth_roots)
-                    .with_client_auth_cert(cert_chain, keys)
+                    .with_single_cert(cert_chain, keys)
                     .expect("bad certificate/key");
 
                 let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
@@ -119,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
                 let tls_config = ClientConfig::builder()
                     .with_safe_defaults()
                     .with_custom_certificate_verifier(Arc::new(RustlsAcceptAnyCertVerifier))
-                    .with_client_auth_cert(cert_chain, keys)
+                    .with_single_cert(cert_chain, keys)
                     .expect("bad certificate/key");
                 let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
                 let domain = ServerName::try_from(config.server.addr.split(':').next().unwrap())?;
