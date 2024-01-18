@@ -4,6 +4,27 @@
 #### Features
 update to netx 2
 
+## 0.2.4
+#### Features
+* update rustls
+
+## 0.2.3
+#### Features
+* change default block size 65536
+
+## 0.2.2
+#### Features
+* fix pull error not stderr out
+
+## 0.2.1
+#### Features
+* add async super speed pull
+
+```shell
+fsc pull -a file
+fsc pull --async file
+```
+
 ## 0.2.0
 #### Features
 * add pull command
