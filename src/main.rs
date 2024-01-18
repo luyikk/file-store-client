@@ -1,5 +1,6 @@
 mod clap_struct;
 mod config;
+mod controller;
 mod interface_server;
 
 use anyhow::{bail, ensure, Context};
@@ -15,17 +16,19 @@ use std::io::{BufReader, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_rustls::rustls::{Certificate, ClientConfig, PrivateKey, RootCertStore, ServerName};
 
 use crate::clap_struct::{ImageArgs, ImageCommands, Opt};
 use crate::config::{get_current_exec_path, load_config};
+use crate::controller::{ClientController, FileWriteService, IFileWS, WriteHandle};
 use crate::interface_server::*;
 
-#[tokio::main]
+#[tokio::main(worker_threads = 2)]
 async fn main() -> anyhow::Result<()> {
     env_logger::builder()
-        .filter_level(LevelFilter::Info)
+        .filter_level(LevelFilter::Trace)
         .filter_module("rustls", LevelFilter::Debug)
         .filter_module("mio", LevelFilter::Debug)
         .init();
@@ -101,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
                 let tls_config = ClientConfig::builder()
                     .with_safe_defaults()
                     .with_root_certificates(server_auth_roots)
-                    .with_single_cert(cert_chain, keys)
+                    .with_client_auth_cert(cert_chain, keys)
                     .expect("bad certificate/key");
 
                 let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
@@ -116,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
                 let tls_config = ClientConfig::builder()
                     .with_safe_defaults()
                     .with_custom_certificate_verifier(Arc::new(RustlsAcceptAnyCertVerifier))
-                    .with_single_cert(cert_chain, keys)
+                    .with_client_auth_cert(cert_chain, keys)
                     .expect("bad certificate/key");
                 let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
                 let domain = ServerName::try_from(config.server.addr.split(':').next().unwrap())?;
@@ -132,6 +135,10 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let wfs = FileWriteService::new();
+    let controller = ClientController::new(wfs.clone());
+    client.init(controller).await?;
+
     match opt {
         Opt::Push {
             dir,
@@ -145,10 +152,11 @@ async fn main() -> anyhow::Result<()> {
         Opt::Pull {
             file,
             save,
+            r#async,
             block,
             overwrite,
         } => {
-            pull_file(&client, file, save, block, overwrite).await?;
+            pull_file(&client, wfs, file, save, r#async, block, overwrite).await?;
         }
         Opt::Image(ImageArgs {
             command:
@@ -200,21 +208,10 @@ async fn push(
         }
     };
 
-    let mut file = tokio::fs::File::open(file).await?;
+    let mut file = File::open(file).await?;
     let size = file.metadata().await?.len();
     let start_hash = Instant::now();
-    let hash = {
-        let mut sha = blake3::Hasher::new();
-        let mut data = vec![0; 1024 * 1024];
-        while let Ok(len) = file.read(&mut data).await {
-            if len > 0 {
-                sha.update(&data[..len]);
-            } else {
-                break;
-            }
-        }
-        hex::encode(sha.finalize().as_bytes())
-    };
+    let hash = computer_b3(&mut file).await;
     log::trace!("hash computer time:{}", start_hash.elapsed().as_secs_f64());
     log::trace!(
         "start push file name:{} size:{}B hash:{}",
@@ -347,23 +344,10 @@ async fn push_image(
         ) -> anyhow::Result<()> {
             ensure!(file.is_file(), "path:{} not file", file.display());
             ensure!(file.exists(), "not found file:{}", file.to_string_lossy());
-            let mut file = tokio::fs::File::open(file).await?;
+            let mut file = File::open(file).await?;
             let size = file.metadata().await?.len();
-            let hash = {
-                let mut sha = blake3::Hasher::new();
-                let mut data = vec![0; 1024 * 1024];
-                while let Ok(len) = file.read(&mut data).await {
-                    if len > 0 {
-                        sha.update(&data[..len]);
-                    } else {
-                        break;
-                    }
-                }
-                hex::encode(sha.finalize().as_bytes())
-            };
-
+            let hash = computer_b3(&mut file).await;
             file.seek(SeekFrom::Start(0)).await?;
-
             let server = impl_struct!(client=>IFileStoreService);
             let key = server.push(&push_file_name, size, hash, overwrite).await?;
 
@@ -491,17 +475,27 @@ async fn show_file_info(client: NetxClientArcDef, file: PathBuf) -> anyhow::Resu
     Ok(())
 }
 
-/// pull file
+/// sync pull file
 #[inline]
 async fn pull_file(
     client: &NetxClientArcDef,
+    wfs: Arc<Actor<FileWriteService>>,
     file: PathBuf,
     save: Option<PathBuf>,
+    r#async: bool,
     block: usize,
     overwrite: bool,
 ) -> anyhow::Result<()> {
     let server = impl_struct!(client=>IFileStoreService);
-    let info = server.get_file_info(&file, true, false).await?;
+    let info = {
+        match server.get_file_info(&file, true, false).await {
+            Ok(info) => info,
+            Err(err) => {
+                log::error!("{}", err);
+                return Ok(());
+            }
+        }
+    };
     ensure!(
         info.b3.is_some(),
         "currently unable to pull file:{}",
@@ -530,6 +524,7 @@ async fn pull_file(
 
     log::info!("start pull file:{}", save_path.display());
     let key = server.create_pull(&file).await?;
+
     let mut fd = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -537,43 +532,53 @@ async fn pull_file(
         .await?;
 
     let size = info.size;
+    log::debug!("file size:{}", size);
     let pb = ProgressBar::new(size);
     pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
         .unwrap()
         .with_key("eta", |state: &ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
         .progress_chars("#>-"));
 
-    let mut offset = 0;
-    while let Ok(data) = server.read(key, offset, block).await {
-        if !data.is_empty() {
-            offset += data.len() as u64;
-            fd.write_all(&data).await?;
-            pb.set_position(offset.min(size));
-        } else {
-            break;
-        }
-    }
-    fd.flush().await?;
-    pb.finish_with_message("downloaded success");
-    drop(fd);
-    server.finish_read_key(key).await;
+    if r#async {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
+        wfs.create_wfs(key, WriteHandle::new(fd, tx)).await;
 
-    let b3 = {
-        let mut sha = blake3::Hasher::new();
-        let mut data = vec![0; 512 * 1024];
-        let mut file = tokio::fs::OpenOptions::new()
-            .read(true)
-            .open(&save_path)
-            .await?;
-        while let Ok(len) = file.read(&mut data).await {
-            if len > 0 {
-                sha.update(&data[..len]);
+        server.async_read(key, block).await;
+
+        let mut offset: u64 = 0;
+        while let Some(r_size) = rx.recv().await {
+            offset += r_size;
+            pb.set_position(offset.min(size));
+            if offset >= size {
+                break;
+            }
+        }
+        wfs.close_wfs(key).await?;
+    } else {
+        let mut offset = 0;
+        while let Ok(data) = server.read(key, offset, block).await {
+            if !data.is_empty() {
+                offset += data.len() as u64;
+                fd.write_all(&data).await?;
+                pb.set_position(offset.min(size));
             } else {
                 break;
             }
         }
-        hex::encode(sha.finalize().as_bytes())
-    };
+        fd.flush().await?;
+        drop(fd);
+    }
+
+    pb.finish_with_message("downloaded success");
+    server.finish_read_key(key).await;
+
+    let b3 = computer_b3(
+        &mut tokio::fs::OpenOptions::new()
+            .read(true)
+            .open(&save_path)
+            .await?,
+    )
+    .await;
 
     if &b3 != info.b3.as_ref().unwrap() {
         std::fs::remove_file(save_path)?;
@@ -587,4 +592,18 @@ async fn pull_file(
     }
 
     Ok(())
+}
+
+#[inline]
+async fn computer_b3(file: &mut File) -> String {
+    let mut sha = blake3::Hasher::new();
+    let mut data = vec![0; 512 * 1024];
+    while let Ok(len) = file.read(&mut data).await {
+        if len > 0 {
+            sha.update(&data[..len]);
+        } else {
+            break;
+        }
+    }
+    hex::encode(sha.finalize().as_bytes())
 }
